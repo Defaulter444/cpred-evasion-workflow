@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.2 — simplified NPC Physical defense and native untrained modifiers
+
+- Fixed untrained melee defense using REF when no recognized Evasion definition exists in the world. It now uses DEX, matching the core Evasion skill in Cyberpunk RED v0.92.4. With DEX 8, REF 3 and a d10 result of 6, the fallback now totals 14 instead of 9.
+- Shared the canonical-English/current-client-localized skill lookup between the defender's Evasion roll and the world stat lookup. Canonical names take priority within each collection; a renamed skill matching the current localization can also provide its configured stat.
+- Fixed untrained defense omitting armor/wound penalties and applicable role/effect modifiers. An ephemeral native Evasion Item with level 0 now uses the system's own `createRoll` pipeline, with the defender as parent. The Item is never saved to the actor or world; modifiers are not manually summed by this module.
+- Added defense compatibility for the recognized Physical / Физические source skill from Night City Gang and Corp Mook Pack. Its value is a complete base: Physical9 + d10, without adding DEX again. It supersedes the pack's Evasion0 placeholder on mooks; explicitly trained Evasion retains priority. A native temporary DEX Evasion roll supplies armor, wounds, role and Evasion/global/default-on effect modifiers, and its card labels the substituted base clearly.
+- Recognition requires the source Item identity and expected generic-skill schema. It supports both legacy and Foundry 12 provenance fields, refuses ambiguous duplicates/invalid values, and does not infer arbitrary same-name skills or affect player characters. Native sheets and REDLINE quick-skill buttons remain unchanged.
+- Ranged eligibility now shares the canonical/current-localized/recognized-Physical selection used by resolution. The REF gate remains unchanged; special homebrew bullet-dodge abilities are not inferred. Manual/automatic routing and damage handling are unchanged. English/German result wording now describes level-zero defense with applicable modifiers.
+- Added regression checks for ready bases, source identity/schema guards, trained skill priority, melee/ranged behavior and absence of persistent document changes. Optional installed CPR checks cover armor, wounds, role bonuses, permanent/default-on effects, disabled/suppressed effects and parity with the system's skipped/dialog-initialized rolls. Set `CPR_SYSTEM_ROOT` to run native checks; they skip without local system files.
+- Validation: 63/63 automated checks passed, including five checks using the installed CPR 0.92.4 source. Isolated Foundry 12.331 live QA confirmed native Evasion, Physical-based melee and ranged defense, system damage application, and level-zero defense retaining a permanent +3 effect. No production world was modified.
+
 ## 0.6.1 — community fork: manual melee defense and persistent choices
 
 - Based on Vec97/cpred-evasion-workflow 0.6.0 by yioxar. The module ID and MIT license remain unchanged; release and update URLs now point to Defaulter444/cpred-evasion-workflow.

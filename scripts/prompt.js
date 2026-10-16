@@ -37,7 +37,7 @@ export async function onMelee(payload) {
   processed.add(requestId);
 
   console.log(`${LOG} | onMelee`, payload);
-  // untrained:true asks resolveEvasion to roll a bare DEX+d10 (Evasion level 0) opposed
+  // untrained:true uses native Evasion at level 0 with applicable modifiers for an opposed
   // check when the actor has NO Evasion skill item, because in CP:R melee is always opposed
   // and an untrained defender still rolls their governing stat. Many mook/imported NPCs ship
   // without the Evasion item; they must still get to defend rather than be auto-hit.

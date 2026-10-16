@@ -84,7 +84,7 @@ export function getAutofireRollType() {
   return CPRRolls?.rollTypes?.AUTOFIRE ?? "autofire";
 }
 
-/** The CPRSkillRoll class (used for the untrained-melee bare-stat defense), or null. */
+/** The CPRSkillRoll class, or null. Untrained defense now uses an ephemeral native skill Item. */
 export function getCPRSkillRoll() {
   return CPRRolls?.CPRSkillRoll ?? null;
 }

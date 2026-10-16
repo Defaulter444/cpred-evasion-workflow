@@ -1,44 +1,43 @@
 /**
  * cpred-evasion-workflow - headless Evasion roll + result card (runs on the DEFENDER's client).
  *
- * resolveEvasion: locate the Evasion skill item by its CANONICAL ENGLISH NAME ("Evasion"),
+ * resolveEvasion: locate the Evasion skill by canonical English name ("Evasion"), with a
+ * fallback to the current client's localized name for renamed items,
  * build the roll via the skill item's own createRoll (so DEX + level + wound/armor/role/AE
  * mods are auto-included), roll headlessly (NO handleRollDialog -> no verify dialog), read
  * resultTotal, render the standard CPR skill card, and compute dodged per the tie setting.
  *
  * If the actor has NO Evasion skill item and untrained:true is passed (melee path), fall
- * back to a bare DEX+d10 opposed check (Evasion level 0) via a transient CPRSkillRoll, since
- * in CP:R melee is always opposed and untrained defenders still roll their governing stat.
+ * back to an ephemeral native Evasion item at level 0. Its createRoll includes DEX and the
+ * defender's applicable native modifiers without adding an item to the actor or world.
  *
  * postResult: post ONE flagged result card. Created here (defender client) and natively
  * broadcast by Foundry to all clients. For a HIT (KIND in HIT_KINDS) it FIRST runs the optional
  * auto-damage step (GM-routed via socketlib) and then appends the appropriate damage sentence
  * (auto-applied vs "roll manually") to the result text.
  *
- * The deep system imports (rollTypes / CPRSkillRoll / CPRChat) live in cprSystem.js so this file
+ * The deep system imports (rollTypes / CPRChat) live in cprSystem.js so this file
  * and damage.js share one guarded copy.
  */
 import { MODULE_ID, LOG, KIND, HIT_KINDS, EVASION_SKILL_NAME } from "./constants.js";
 import { Settings } from "./settings.js";
-import { getSkillRollType, getCPRSkillRoll, getRenderRollCard } from "./cprSystem.js";
+import { getSkillRollType, getRenderRollCard } from "./cprSystem.js";
+import { findEvasionSkill, selectDefenseSkill } from "./defense-skill.js";
 
 /**
- * Discover Evasion's governing stat (e.g. "ref" or "dex", per the system's skill definition)
- * from any Evasion skill item in the world, so the untrained-melee fallback never hardcodes the
- * wrong stat for an actor that happens to lack the skill item. Defaults to "ref" if no Evasion
- * skill exists anywhere.
+ * Discover Evasion's governing stat from a recognized skill item in the world.
+ * When none exists, use DEX, as defined by the core Evasion skill in CPR v0.92.4.
+ * This fallback is only for untrained melee defense; it does not add a skill level.
  * @returns {string} the stat key
  */
 function findEvasionStat() {
-  const fromWorldItem = game.items?.find(
-    (i) => i.type === "skill" && i.name === EVASION_SKILL_NAME
-  );
+  const fromWorldItem = findEvasionSkill(game.items?.filter((item) => item.type === "skill"));
   if (fromWorldItem?.system?.stat) return fromWorldItem.system.stat;
   for (const a of game.actors ?? []) {
-    const s = a.itemTypes?.skill?.find((sk) => sk.name === EVASION_SKILL_NAME);
+    const s = findEvasionSkill(a.itemTypes?.skill);
     if (s?.system?.stat) return s.system.stat;
   }
-  return "ref";
+  return "dex";
 }
 
 /**
@@ -58,16 +57,8 @@ export async function resolveEvasion(payload) {
     return { evasionTotal: 0, dodged: false, ok: false };
   }
 
-  // Locate the Evasion skill by CANONICAL ENGLISH NAME. Core skill items are always named
-  // with the fixed English name; the localized label is derived from it at display time.
-  // A localized-name lookup would fail on a German client (item is "Evasion", localize
-  // returns "Ausweichen") and silently break every resolution. Localized fallback kept only
-  // for the pathological case of a renamed item.
-  let evasion = defActor.itemTypes.skill.find((s) => s.name === EVASION_SKILL_NAME);
-  if (!evasion) {
-    const localizedName = game.i18n.localize("CPR.global.itemType.skill.evasion");
-    evasion = defActor.itemTypes.skill.find((s) => s.name === localizedName);
-  }
+  const defense = selectDefenseSkill(defActor);
+  const evasion = defense.kind === "evasion" ? defense.item : null;
 
   let cprRoll;
   let untrainedDefense = false;
@@ -76,26 +67,39 @@ export async function resolveEvasion(payload) {
     // Build the roll via the skill item's own createRoll (auto-includes stat + mods).
     // Headless: we deliberately DO NOT call cprRoll.handleRollDialog() (the verify dialog).
     cprRoll = evasion.createRoll(getSkillRollType(), defActor);
-  } else if (untrained) {
-    // Untrained melee defense: bare governing-stat + d10, Evasion level 0. Build a transient
-    // CPRSkillRoll(statName, statValue, skillName, skillValue) so the standard skill card still
-    // renders "Evasion" and the total includes the stat. The stat is discovered generically
-    // (never hardcoded REF vs DEX) since this actor has no Evasion item to read it from.
-    const CPRSkillRoll = getCPRSkillRoll();
-    const statName = findEvasionStat();
-    const statValue =
-      typeof defActor.getStat === "function"
-        ? defActor.getStat(statName)
-        : parseInt(defActor.system?.stats?.[statName]?.value ?? 0, 10);
-    if (!CPRSkillRoll || Number.isNaN(statValue)) {
-      console.warn(
-        `${LOG} | resolveEvasion: cannot build untrained melee defense (missing CPRSkillRoll or ${statName})`,
-        payload
-      );
+  } else if (defense.kind === "physical" || untrained) {
+    // Construct only in memory: never create/update an embedded or world Item. Using the
+    // native skill builder preserves armor, wounds, role and default-on effect modifiers.
+    const ItemClass = globalThis.CONFIG?.Item?.documentClass;
+    if (typeof ItemClass !== "function") {
+      console.warn(`${LOG} | resolveEvasion: native Item constructor unavailable`, payload);
       return { evasionTotal: 0, dodged: false, ok: false };
     }
-    cprRoll = new CPRSkillRoll(statName, statValue, EVASION_SKILL_NAME, 0);
-    untrainedDefense = true;
+    const temporaryEvasion = new ItemClass({
+      name: EVASION_SKILL_NAME,
+      type: "skill",
+      system: {
+        level: 0, stat: defense.kind === "physical" ? "dex" : findEvasionStat(), category: "fightingSkills",
+        core: true, basic: true, skillType: "generic", difficulty: "typical",
+      },
+    }, { parent: defActor });
+    cprRoll = temporaryEvasion.createRoll(getSkillRollType(), defActor);
+    if (!cprRoll || typeof cprRoll.roll !== "function" || !Number.isFinite(cprRoll.statValue)) {
+      console.warn(`${LOG} | resolveEvasion: native untrained skill roll unavailable`, payload);
+      return { evasionTotal: 0, dodged: false, ok: false };
+    }
+    if (defense.kind === "physical") {
+      // The pack's Physical value is already a complete base. Build a native DEX
+      // Evasion first so armor and Evasion-specific effects/role bonuses are correct,
+      // then substitute only the base terms before the system rolls any dice.
+      // No actor/item data or modifier list is changed, and DEX is not added twice.
+      cprRoll.statValue = defense.base;
+      cprRoll.skillValue = 0;
+      cprRoll.statName = game.i18n.format(`${MODULE_ID}.roll.physicalBase`, { skill: defense.item.name });
+      cprRoll.rollTitle = `${game.i18n.localize("CPR.global.itemType.skill.evasion")} — ${cprRoll.statName}`;
+    } else {
+      untrainedDefense = true;
+    }
   } else {
     // Ranged Evade with no skill item (should be gated by canEvadeRanged upstream).
     console.warn(

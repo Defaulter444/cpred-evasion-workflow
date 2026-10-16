@@ -1,5 +1,6 @@
 {
   "cpred-evasion-workflow": {
+    "roll": { "physicalBase": "{skill} (base)" },
     "settings": {
       "enableRangedPrompt": {
         "name": "Prompt on ranged attack",
@@ -65,8 +66,8 @@
       "missedAnyway": "{target} braced to tank, but the shot missed anyway (attack {attack} vs DV {dv}). No damage.",
       "meleeDodged": "{target} evades the melee attack - Evasion {evasion} vs attack {attack}. Attack negated.",
       "meleeHit": "{target} is hit in melee - Evasion {evasion} vs attack {attack}.",
-      "meleeDodgedUntrained": "{target} (untrained) evades the melee attack with a bare REF/DEX roll - {evasion} vs attack {attack}. Attack negated.",
-      "meleeHitUntrained": "{target} (untrained, no Evasion skill) is hit in melee - bare defense {evasion} vs attack {attack}.",
+      "meleeDodgedUntrained": "{target} (untrained, Evasion level 0) evades the melee attack with applicable modifiers - {evasion} vs attack {attack}. Attack negated.",
+      "meleeHitUntrained": "{target} (untrained, Evasion level 0) is hit in melee - defense with applicable modifiers {evasion} vs attack {attack}.",
       "damageAuto": "Damage {damage} rolled and applied automatically.",
       "damageManual": "Hit stands - attacker rolls damage via the Roll Damage button."
     },

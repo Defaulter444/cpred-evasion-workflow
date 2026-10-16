@@ -1,5 +1,6 @@
 {
   "cpred-evasion-workflow": {
+    "roll": { "physicalBase": "{skill} (Basiswert)" },
     "settings": {
       "enableRangedPrompt": {
         "name": "Abfrage bei Fernkampfangriff",
@@ -65,8 +66,8 @@
       "missedAnyway": "{target} wollte tanken, aber der Schuss ging daneben (Angriff {attack} gegen DV {dv}). Kein Schaden.",
       "meleeDodged": "{target} weicht dem Nahkampfangriff aus - Ausweichen {evasion} gegen Angriff {attack}. Angriff abgewehrt.",
       "meleeHit": "{target} wird im Nahkampf getroffen - Ausweichen {evasion} gegen Angriff {attack}.",
-      "meleeDodgedUntrained": "{target} (untrainiert) weicht dem Nahkampfangriff mit einem blanken REF/DEX-Wurf aus - {evasion} gegen Angriff {attack}. Angriff abgewehrt.",
-      "meleeHitUntrained": "{target} (untrainiert, keine Fertigkeit Evasion) wird im Nahkampf getroffen - blanke Verteidigung {evasion} gegen Angriff {attack}.",
+      "meleeDodgedUntrained": "{target} (untrainiert, Ausweichen Stufe 0) weicht dem Nahkampfangriff mit anwendbaren Modifikatoren aus - {evasion} gegen Angriff {attack}. Angriff abgewehrt.",
+      "meleeHitUntrained": "{target} (untrainiert, Ausweichen Stufe 0) wird im Nahkampf getroffen - Verteidigung mit anwendbaren Modifikatoren {evasion} gegen Angriff {attack}.",
       "damageAuto": "Schaden {damage} automatisch gewuerfelt und angewendet.",
       "damageManual": "Treffer bleibt bestehen - der Angreifer wuerfelt Schaden ueber die Schaden-wuerfeln-Schaltflaeche."
     },

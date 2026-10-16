@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { loadModule } from "./module-harness.mjs";
+import { physicalSkill, evasionSkill } from "./physical-fixture.mjs";
 
 async function detectHarness({ ranged = false, thrown = false, autoMelee = false,
   rangedPrompt = true, responsible = "player", gm = false, failDelivery = false } = {}) {
@@ -48,7 +49,7 @@ async function detectHarness({ ranged = false, thrown = false, autoMelee = false
     await module.onCreateChatMessage({ id: "attack", _source: { author: game.userId },
       author: { targets: new Set([target]) }, speaker: { token: attackerToken.id }, content: "attack card" });
   }
-  return { calls, attack, module };
+  return { calls, attack, module, defender, settings, game };
 }
 
 test("auto-melee off routes player-owned melee to manual prompt without ranged gate/DV", async () => {
@@ -111,4 +112,40 @@ test("delivery failure on a player does not resolve or damage without authority"
   await h.attack();
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].type, "warning");
+});
+
+for (const ref of [3, 8]) {
+  test(`Physical ready base satisfies only the ranged skill gate; REF${ref} still controls bullet eligibility`, async () => {
+    const h = await detectHarness({ ranged: true });
+    Object.assign(h.defender, { type: "mook" });
+    h.defender.system.stats.ref.value = ref;
+    h.defender.itemTypes.skill.push(evasionSkill(), physicalSkill());
+    await h.attack();
+    const payload = h.calls.find(call => call.type === "prompt").payload;
+    assert.equal(payload.canEvadeRanged, ref >= 8);
+    assert.equal(payload.dv, 13);
+    assert.equal(payload.isMelee, false);
+  });
+}
+
+test("disabling the REF gate still requires a positive recognized defense base", async () => {
+  const h = await detectHarness({ ranged: true });
+  h.defender.type = "mook";
+  h.settings.enforceRef8Gate = false;
+  const physical = physicalSkill();
+  h.defender.itemTypes.skill.push(evasionSkill(), physical);
+  await h.attack();
+  assert.equal(h.calls.find(call => call.type === "prompt").payload.canEvadeRanged, true);
+  h.calls.length = 0; physical.system.level = 0;
+  await h.attack();
+  assert.equal(h.calls.find(call => call.type === "prompt").payload.canEvadeRanged, false);
+});
+
+test("localized trained Evasion uses the same current-language lookup for ranged eligibility and resolution", async () => {
+  const h = await detectHarness({ ranged: true });
+  h.game.i18n.localize = () => "Уклонение";
+  h.defender.system.stats.ref.value = 8;
+  h.defender.itemTypes.skill.push(evasionSkill(4, "Уклонение"));
+  await h.attack();
+  assert.equal(h.calls.find(call => call.type === "prompt").payload.canEvadeRanged, true);
 });

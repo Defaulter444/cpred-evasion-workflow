@@ -6,10 +6,11 @@
  * message.rolls, so the attack total must be scraped from the DOM. The melee/ranged
  * discriminator is read off the WEAPON ITEM, not the DOM subtitle.
  */
-import { MODULE_ID, LOG, EVASION_SKILL_NAME } from "./constants.js";
+import { MODULE_ID, LOG } from "./constants.js";
 import { Settings } from "./settings.js";
 import { Sockets } from "./sockets.js";
 import { Utils } from "./utils.js";
+import { selectDefenseSkill } from "./defense-skill.js";
 
 export async function onCreateChatMessage(message) {
   // (1) Run only on the acting (attacker's) client. Guarantees single run.
@@ -245,27 +246,17 @@ async function handleEmitFailure(error, { defActor, resolveLocallyAsGM }) {
 }
 
 /**
- * canEvadeRanged = (!enforceRef8Gate || REF>=8) && Evasion skill level > 0.
+ * canEvadeRanged = (!enforceRef8Gate || REF>=8) && a positive defense skill/base.
  * REF path defActor.system.stats.ref.value mirrors diwako's usage.
  *
- * The Evasion skill is looked up by its CANONICAL ENGLISH NAME ("Evasion"), never the
- * localized label: core skill items are named with the fixed English name and getSkillLevel
- * filters by s.name === skillName. Passing a localized string (e.g. German "Ausweichen")
- * would match no item and always return level 0.
+ * Use exactly the same canonical/localized Evasion or recognized Physical selection
+ * as the defender's roll. This does not automate pack-specific bullet-dodge abilities.
  */
 function computeCanEvadeRanged(defActor) {
   const enforce = Settings.get("enforceRef8Gate");
   const refOk = !enforce || (defActor.system?.stats?.ref?.value ?? 0) >= 8;
-  let level = 0;
-  if (typeof defActor.getSkillLevel === "function") {
-    level = defActor.getSkillLevel(EVASION_SKILL_NAME);
-  }
-  if (!level) {
-    // Direct item fallback (covers a hypothetical getSkillLevel absence).
-    level =
-      defActor.itemTypes.skill.find((s) => s.name === EVASION_SKILL_NAME)?.system
-        ?.level ?? 0;
-  }
+  const defense = selectDefenseSkill(defActor);
+  const level = defense.kind === "physical" ? defense.base : defense.item?.system?.level ?? 0;
   return refOk && level > 0;
 }
 
