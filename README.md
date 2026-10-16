@@ -1,5 +1,12 @@
 # Cyberpunk RED – Evasion Workflow
 
+**0.6.1 · community fork maintained at [Defaulter444/cpred-evasion-workflow](https://github.com/Defaulter444/cpred-evasion-workflow)**
+
+Based on [Vec97/cpred-evasion-workflow](https://github.com/Vec97/cpred-evasion-workflow) by
+**yioxar**. This is a community-maintained fork, not an upstream release. The original MIT
+license and copyright notice are retained. The module ID remains `cpred-evasion-workflow`,
+so existing settings and chat flags are preserved.
+
 A standalone [Foundry VTT](https://foundryvtt.com/) **v12** companion module for the
 **cyberpunk-red-core** system (verified on v0.92.4). It turns the "does it hit?" moment into an
 interactive, automated flow: the target is asked to **Evade** or **Tank** an incoming attack, the
@@ -27,10 +34,13 @@ so they cannot metagame the roll:
 - **Tank** → the shot is resolved against its DV (computed on the attacker's client and shipped
   along), so a tanked shot that actually missed reports "missed anyway" with no damage.
 
-### Automatic melee defense
-Melee and thrown-in-melee attacks are resolved automatically with **no prompt** (in CP:R melee is
-always an opposed roll). If the target has no Evasion skill item (common on trimmed mook/imported
-NPCs), an untrained bare-stat defense is rolled instead of an automatic hit.
+### Automatic or manual melee defense
+With **Auto-resolve melee defense** enabled, melee and thrown-in-melee attacks resolve an opposed
+Evasion roll automatically, without a prompt. Turn it off to give the controlling player an
+**Evade / Tank** prompt instead. Evade uses the same opposed roll; Tank accepts the hit without
+rolling Evasion or checking a ranged DV. If the target has no Evasion skill item (common on trimmed
+mook/imported NPCs), Evade uses an untrained bare-stat defense. The bullet REF gate never applies
+to melee. Damage still follows the separate **Auto-roll and apply damage on a hit** setting.
 
 ### Auto‑roll and apply damage (optional)
 On a confirmed hit, the module can automatically roll the weapon's damage **and apply it** to the
@@ -58,7 +68,8 @@ and theme-aware for a light or dark chat log.
 
 ## Requirements
 
-- Foundry VTT **v12**
+- Foundry VTT **v12**, minimum and verified build **12.331** for this fork. Upstream declared
+  12.343 support; that build was not separately tested for this patch.
 - System **cyberpunk-red-core** (v0.89+, verified v0.92.4)
 - **[socketlib](https://foundryvtt.com/packages/socketlib)** — required (cross-client routing)
 - **[diwako-cpred-additions](https://foundryvtt.com/packages/diwako-cpred-additions)** — optional /
@@ -67,19 +78,34 @@ and theme-aware for a light or dark chat log.
 ## Install
 
 1. Install and enable **socketlib**.
-2. Copy this folder to `Data/modules/cpred-evasion-workflow` (so `module.json` sits at
-   `Data/modules/cpred-evasion-workflow/module.json`), or install via the manifest URL.
+2. Install using this fork's manifest URL:
+
+   `https://github.com/Defaulter444/cpred-evasion-workflow/releases/latest/download/module.json`
+
+   For a manual install, extract this fork's `module.zip` to `Data/modules/cpred-evasion-workflow`
+   so `module.json` sits directly in that folder.
 3. Enable **Cyberpunk RED – Evasion Workflow** (and socketlib) in *Manage Modules*.
 4. **Restart Foundry / reload the world** after first enabling it, so socketlib picks up the
    module's `"socket": true` flag.
 5. Configure under *Game Settings → Configure Settings → Cyberpunk RED – Evasion Workflow*.
+
+## Updating from upstream
+
+Use the **new manifest URL above** to switch to this fork; the upstream manifest continues to
+follow Vec97's releases. Keep a single installation of `cpred-evasion-workflow` and confirm that
+its manifest points to `Defaulter444` after updating. Refresh connected clients after installing.
+The module ID, settings keys and MIT attribution are unchanged. Installing two copies under
+other folder names is not supported.
+
+For manual melee defense, disable **Auto-resolve melee defense**. The defender then receives
+an **Evade / Tank** choice; the separate damage setting still controls automatic damage.
 
 ## Settings (all world-scoped)
 
 | Setting | Default | Effect |
 |---|---|---|
 | Prompt on ranged attack | on | Ranged attack → prompt the target to Evade/Tank (before hit/miss). |
-| Auto-resolve melee defense | on | Melee/thrown-in-melee → auto opposed Evasion, no prompt. |
+| Auto-resolve melee defense | on | On: automatic opposed melee Evasion. Off: manual Evade/Tank prompt for the defender. |
 | Require REF 8+ to dodge bullets | off | Ranged Evade only offered at REF 8+ (Dodging Bullets). |
 | Prompt timeout (seconds) | 0 | Auto-default to Tank after N seconds; 0 = wait forever. |
 | Result visibility | public | public / GM only / GM + involved players. |
@@ -113,8 +139,28 @@ and theme-aware for a light or dark chat log.
 - The blind-decision auto-Tank timeout is an in-memory timer on the defender's client; if that
   client reloads before choosing, the timeout will not fire (the persisted prompt can still be
   clicked).
+- A chosen prompt is saved before resolution and stays locked after reload, so clicking an old
+  prompt does not apply damage again. Existing result cards also protect completed prompts from
+  older releases that have no saved resolution state. Pending prompts are interactive on the
+  initial chat render after reload, while completed prompts remain disabled. If resolution fails after it starts, check existing rolls
+  and damage with the GM and finish manually; the module reports the failure and deliberately
+  does not retry potentially applied damage. Use one connected browser tab per defending user.
 - If a player can still hover the target with Diwako's DV display active, they can read the DV; turn
   that off if you want a fully blind table.
+
+## Validation and packaging
+
+- Automated checks: **28/28 tests** covering manual/automatic melee routing, ranged behavior,
+  permission checks, click/timeout races, saved choices, legacy completed cards and initial chat
+  rendering after reload.
+- Run tests with `node --experimental-vm-modules --test tests/*.test.mjs`. The VM modules flag
+  is required by the isolated Foundry test harness.
+- Tested in an isolated Foundry **12.331** world with Cyberpunk RED **0.92.4**, including manual
+  melee Evade and Tank decisions and GM-routed damage affecting HP.
+- Build with `python tools/package.py`. It produces `dist/module.json`, `dist/module.zip` and
+  `dist/SHA256SUMS.txt`; fixed ZIP metadata makes repeated builds from identical files reproducible.
+  The archive includes only runtime scripts, CSS, language files, the manifest and license/docs.
+  Tests, build tools, Git files and world data are excluded.
 
 ## License
 

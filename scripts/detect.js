@@ -168,14 +168,15 @@ async function resolveTargetWorkflow(target, shared) {
   // Local (this-client) GM resolution helper, reused by the no-user and emit-failure paths.
   const resolveLocallyAsGM = async () => {
     const { onMelee, onPrompt } = await import("./prompt.js");
-    if (isRangedPrompt && Settings.get("enableRangedPrompt")) {
+    if (isRangedPrompt) {
+      if (!Settings.get("enableRangedPrompt")) return undefined;
       const canEvadeRanged = computeCanEvadeRanged(defActor);
       return onPrompt({ ...basePayload, canEvadeRanged, isMelee: false, dv });
     }
     if (Settings.get("enableAutoMelee")) {
       return onMelee({ ...basePayload, isMelee: true });
     }
-    return undefined;
+    return onPrompt({ ...basePayload, canEvadeRanged: true, isMelee: true });
   };
 
   // No authoritative client available at selection time.
@@ -208,10 +209,17 @@ async function resolveTargetWorkflow(target, shared) {
     return;
   }
 
-  // MELEE path (incl. thrownWeapon). No prompt.
-  if (!Settings.get("enableAutoMelee")) return;
+  // MELEE path (incl. thrownWeapon): disabling automation retains a manual choice.
   try {
-    await Sockets.emitMelee(defenderUserId, { ...basePayload, isMelee: true });
+    if (Settings.get("enableAutoMelee")) {
+      await Sockets.emitMelee(defenderUserId, { ...basePayload, isMelee: true });
+    } else {
+      await Sockets.emitPrompt(defenderUserId, {
+        ...basePayload,
+        canEvadeRanged: true, // The bullet REF/skill gate never applies to melee.
+        isMelee: true,
+      });
+    }
   } catch (e) {
     await handleEmitFailure(e, { defActor, resolveLocallyAsGM });
   }

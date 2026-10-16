@@ -21,6 +21,15 @@ const pendingTimeouts = new Map();
 // Tracks which requestIds already had a button acted on (prevents double-click race).
 const actedPrompts = new Set();
 
+// Before persisted prompt states existed, completed results already carried this
+// requestId. Respect those records when an old prompt is rendered after an update.
+function hasRecordedResult(requestId) {
+  return !!game.messages?.find((message) => {
+    const flag = message.flags?.[MODULE_ID];
+    return flag?.result && flag.requestId === requestId;
+  });
+}
+
 /** MELEE receiver: immediately roll opposed Evasion and post the result. */
 export async function onMelee(payload) {
   const { requestId } = payload;
@@ -49,10 +58,13 @@ export async function onMelee(payload) {
   });
 }
 
-/** RANGED receiver: post the interactive Evade/Tank prompt (whispered to this user). */
+/** Ranged or manual melee receiver: whisper the choice to the responsible user. */
 export async function onPrompt(payload) {
   const { requestId, atkName, defName, canEvadeRanged } = payload;
-  if (processed.has(requestId)) return;
+  if (processed.has(requestId) || hasRecordedResult(requestId)) return;
+  // Persisted prompts survive a reload; do not create a second actionable card.
+  if (game.messages?.find((m) => m.flags?.[MODULE_ID]?.prompt &&
+      m.flags[MODULE_ID].requestId === requestId)) return;
   processed.add(requestId);
 
   console.log(`${LOG} | onPrompt`, payload);
@@ -82,19 +94,25 @@ export async function onPrompt(payload) {
 </div>`;
 
   // Whisper the prompt to this user only (the responsible defender user).
-  await ChatMessage.create({
-    content,
-    whisper: [game.userId],
-    speaker: { alias: game.i18n.localize(`${MODULE_ID}.prompt.title`) },
-    flags: {
-      [MODULE_ID]: {
-        prompt: true,
-        requestId,
-        payload,
-        defenderUserId: game.userId,
+  let message;
+  try {
+    message = await ChatMessage.create({
+      content,
+      whisper: [game.userId],
+      speaker: { alias: game.i18n.localize(`${MODULE_ID}.prompt.title`) },
+      flags: {
+        [MODULE_ID]: {
+          prompt: true,
+          requestId,
+          payload,
+          defenderUserId: game.userId,
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    processed.delete(requestId); // No card or effects: delivery may safely be retried.
+    throw error;
+  }
 
   // Timeout -> default to Tank.
   // KNOWN LIMITATION: this auto-Tank timer is in-memory on the defender client. If that
@@ -102,46 +120,35 @@ export async function onPrompt(payload) {
   // still click the persisted card, but the auto-Tank guarantee lapses. Documented as-is.
   const timeoutSecs = Number(Settings.get("promptTimeoutSeconds")) || 0;
   if (timeoutSecs > 0) {
-    const handle = setTimeout(async () => {
+    const handle = setTimeout(() => {
       pendingTimeouts.delete(requestId);
-      if (actedPrompts.has(requestId)) return;
-      actedPrompts.add(requestId);
       console.log(`${LOG} | prompt ${requestId} timed out -> Tank`);
-      await resolveTank(payload);
+      void chooseDefense(message, "tank");
     }, timeoutSecs * 1000);
     pendingTimeouts.set(requestId, handle);
   }
 }
 
 /**
- * Bind prompt button clicks. Registered once (see registerPromptHooks below).
- * Only the defender user who received the whisper can act.
+ * Resolve a chosen Evasion using the same melee rules as the automatic path.
  */
 async function onEvadeClick(payload) {
   const { requestId } = payload;
-  if (actedPrompts.has(requestId)) return;
-  actedPrompts.add(requestId);
-  clearPromptTimeout(requestId);
-
   console.log(`${LOG} | evade clicked for ${requestId}`);
-  // Ranged Evade is a deliberate action gated behind canEvadeRanged (needs the skill),
-  // so we do NOT pass untrained here: a bullet-dodge without the skill is not offered.
-  const { evasionTotal, dodged, ok } = await resolveEvasion(payload);
+  const melee = payload.isMelee === true;
+  const { evasionTotal, dodged, ok, untrainedDefense } = await resolveEvasion({
+    ...payload,
+    untrained: melee,
+  });
   if (!ok) {
-    await postResult(KIND.FAILED, { ...payload, evasionTotal: 0, noSkill: true });
+    await postResult(melee ? KIND.MELEE_HIT : KIND.FAILED,
+      { ...payload, evasionTotal: 0, noSkill: true });
     return;
   }
-  await postResult(dodged ? KIND.DODGED : KIND.FAILED, { ...payload, evasionTotal });
-}
-
-async function onTankClick(payload) {
-  const { requestId } = payload;
-  if (actedPrompts.has(requestId)) return;
-  actedPrompts.add(requestId);
-  clearPromptTimeout(requestId);
-
-  console.log(`${LOG} | tank clicked for ${requestId}`);
-  await resolveTank(payload);
+  const kind = melee
+    ? (dodged ? KIND.MELEE_DODGED : KIND.MELEE_HIT)
+    : (dodged ? KIND.DODGED : KIND.FAILED);
+  await postResult(kind, { ...payload, evasionTotal, untrainedDefense: !!untrainedDefense });
 }
 
 /**
@@ -152,7 +159,9 @@ async function onTankClick(payload) {
  */
 async function resolveTank(payload) {
   const { dv, attackTotal } = payload;
-  const hit = dv == null ? true : attackTotal > dv;
+  // Accepting a melee hit skips the opposed roll, never consults a ranged DV,
+  // and uses TANKED so the result does not invent an Evasion roll of zero.
+  const hit = payload.isMelee === true || dv == null || attackTotal > dv;
   await postResult(hit ? KIND.TANKED : KIND.MISSED_ANYWAY, payload);
 }
 
@@ -165,8 +174,59 @@ function clearPromptTimeout(requestId) {
 }
 
 /**
+ * Claim the persisted prompt BEFORE rolling/applying damage. The local Set closes
+ * click/timeout races; the flag prevents an old card from applying damage again
+ * after reload. Once effects may have begun, an error needs GM adjudication, not
+ * a retry: the GM damage handler cannot promise that a failed response did nothing.
+ */
+async function chooseDefense(message, choice, root = null) {
+  const flag = message.flags?.[MODULE_ID];
+  if (!flag?.prompt || game.userId !== flag.defenderUserId) return;
+  const payload = flag.payload;
+  const { requestId } = payload;
+  if (flag.resolutionState || actedPrompts.has(requestId) || hasRecordedResult(requestId)) {
+    if (root) disableButtons(root);
+    return;
+  }
+  if (choice === "evade" && !payload.canEvadeRanged) return;
+
+  const scene = payload.defSceneId ? game.scenes.get(payload.defSceneId) : canvas.scene;
+  const actor = scene?.tokens?.get(payload.defTokenId)?.actor ?? game.actors.get(payload.defActorId);
+  if (!actor || (!game.user.isGM && !actor.testUserPermission(game.user, "OWNER"))) {
+    ui.notifications?.warn(game.i18n.localize(`${MODULE_ID}.error.noDefensePermission`));
+    return;
+  }
+  actedPrompts.add(requestId);
+  clearPromptTimeout(requestId);
+  if (root) disableButtons(root);
+  try {
+    await message.update({ [`flags.${MODULE_ID}.resolutionState`]: "resolving", [`flags.${MODULE_ID}.choice`]: choice });
+  } catch (error) {
+    // No roll/damage has started. Permit a later explicit click after write failure.
+    actedPrompts.delete(requestId);
+    if (root) {
+      root.find("button[data-action=cpr-tank]").prop("disabled", false);
+      root.find("button[data-action=cpr-evade]").prop("disabled", !payload.canEvadeRanged);
+    }
+    console.error(`${LOG} | could not claim defense prompt`, error);
+    ui.notifications?.error(game.i18n.localize(`${MODULE_ID}.error.promptSaveFailed`));
+    return;
+  }
+  try {
+    if (choice === "evade") await onEvadeClick(payload);
+    else await resolveTank(payload);
+    await message.update({ [`flags.${MODULE_ID}.resolutionState`]: "resolved" });
+  } catch (error) {
+    console.error(`${LOG} | defense resolution failed; do not repeat possible damage`, error);
+    try { await message.update({ [`flags.${MODULE_ID}.resolutionState`]: "failed" }); }
+    catch (saveError) { console.error(`${LOG} | could not save failed defense state`, saveError); }
+    ui.notifications?.error(game.i18n.localize(`${MODULE_ID}.error.defenseFailed`), { permanent: true });
+  }
+}
+
+/**
  * renderChatMessage hook: wire the prompt buttons on the defender's client.
- * Registered from main.js ready via registerPromptHooks().
+ * Registered while this ES module loads, before Foundry renders the initial chat.
  */
 function bindPromptButtons(msg, html) {
   const flag = msg.flags?.[MODULE_ID];
@@ -174,17 +234,18 @@ function bindPromptButtons(msg, html) {
   if (game.userId !== flag.defenderUserId) return;
 
   const root = html instanceof jQuery ? html : $(html);
-  const payload = flag.payload;
+  if (flag.resolutionState || actedPrompts.has(flag.payload.requestId) || hasRecordedResult(flag.payload.requestId)) {
+    disableButtons(root);
+    return;
+  }
 
-  root.find("button[data-action=cpr-evade]").on("click", (ev) => {
+  root.find("button[data-action=cpr-evade]").off("click.cprEvasion").on("click.cprEvasion", (ev) => {
     ev.preventDefault();
-    disableButtons(root);
-    onEvadeClick(payload);
+    return chooseDefense(msg, "evade", root);
   });
-  root.find("button[data-action=cpr-tank]").on("click", (ev) => {
+  root.find("button[data-action=cpr-tank]").off("click.cprEvasion").on("click.cprEvasion", (ev) => {
     ev.preventDefault();
-    disableButtons(root);
-    onTankClick(payload);
+    return chooseDefense(msg, "tank", root);
   });
 }
 
@@ -192,10 +253,6 @@ function disableButtons(root) {
   root.find("button.cpr-evasion-btn").prop("disabled", true);
 }
 
-// Register the renderChatMessage binding exactly once.
-let promptHooksRegistered = false;
-Hooks.once("ready", () => {
-  if (promptHooksRegistered) return;
-  promptHooksRegistered = true;
-  Hooks.on("renderChatMessage", bindPromptButtons);
-});
+// ESM is evaluated once. Foundry can render persisted chat messages before ready,
+// so waiting for ready would leave old prompts unwired and resolved buttons active.
+Hooks.on("renderChatMessage", bindPromptButtons);

@@ -7,7 +7,7 @@
       },
       "enableAutoMelee": {
         "name": "Nahkampf-Verteidigung automatisch aufloesen",
-        "hint": "Nahkampf- und im Nahkampf geworfene Angriffe wuerfeln automatisch das Ausweichen des Ziels als vergleichenden Wurf, ohne Abfrage. Wenn aus, wird Nahkampf nicht automatisch aufgeloest."
+        "hint": "Wenn an, wird Ausweichen gegen Nahkampf- und im Nahkampf geworfene Angriffe automatisch gewuerfelt. Wenn aus, erhaelt der steuernde Spieler die Schaltflaechen Ausweichen / Tanken. Im Nahkampf sind weder REF 8 noch eine erlernte Evasion-Fertigkeit erforderlich."
       },
       "enforceRef8Gate": {
         "name": "REF 8+ zum Ausweichen von Kugeln erforderlich",
@@ -78,6 +78,9 @@
     },
     "error": {
       "noEvasionSkill": "{target} hat keine nutzbare Fertigkeit Evasion und konnte sich nicht verteidigen.",
+      "noDefensePermission": "Du kontrollierst dieses Ziel nicht mehr. Bitte den GM, den Angriff aufzuloesen.",
+      "promptSaveFailed": "Die Verteidigungswahl konnte nicht gespeichert werden. Weder Wurf noch Schaden wurden gestartet; versuche die Schaltflaeche erneut.",
+      "defenseFailed": "Die Verteidigung konnte nicht abgeschlossen werden. Der GM muss den Wurf und bereits angewendeten Schaden pruefen und manuell abschliessen. Diese Abfrage ist gesperrt, um doppelten Schaden zu verhindern.",
       "noTarget": "Fuer den Angriff wurde kein Ziel ausgewaehlt.",
       "noResponsibleUser": "Kein verbundener Besitzer oder GM, um das Ausweichen des Verteidigers aufzuloesen.",
       "noSocketlib": "Cyberpunk RED - Evasion Workflow benoetigt das Modul socketlib, das nicht aktiv ist.",

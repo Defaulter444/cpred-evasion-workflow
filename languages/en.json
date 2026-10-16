@@ -7,7 +7,7 @@
       },
       "enableAutoMelee": {
         "name": "Auto-resolve melee defense",
-        "hint": "Melee and thrown-in-melee attacks automatically roll the target's Evasion as an opposed roll, with no prompt. If off, melee is not auto-resolved."
+        "hint": "When on, melee and thrown-in-melee attacks automatically roll the target's opposed Evasion. When off, the controlling player receives Evade / Tank buttons instead. Melee does not require REF 8 or a trained Evasion skill."
       },
       "enforceRef8Gate": {
         "name": "Require REF 8+ to dodge bullets",
@@ -78,6 +78,9 @@
     },
     "error": {
       "noEvasionSkill": "{target} has no usable Evasion skill and could not defend.",
+      "noDefensePermission": "You no longer control this defender. Ask the GM to resolve the attack.",
+      "promptSaveFailed": "The defense choice could not be saved. No roll or damage was started; try the button again.",
+      "defenseFailed": "The defense could not finish. Ask the GM to check the roll and damage already applied, then finish manually. This prompt is locked to prevent applying damage twice.",
       "noTarget": "No target was selected for the attack.",
       "noResponsibleUser": "No connected owner or GM to resolve the defender's Evasion.",
       "noSocketlib": "Cyberpunk RED - Evasion Workflow requires the socketlib module, which is not active.",
